@@ -11,17 +11,18 @@ def image_directory_path(instance, filename):
     return 'achievement_{0}/image_{1}'.format(instance.id, filename)
 # end def
 
+
 class Achievement(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False, unique=True)
     title = models.CharField(max_length=255)
     badge = models.ImageField(upload_to=image_directory_path, max_length=100, null=True, default=None)
     timestamp = models.DateTimeField(auto_now_add=True)
     is_deleted = models.BooleanField(default=False)
-
 # end class
 
+
 class AchievementRequirement(models.Model):
-    CODING_LANGUAGES = (
+    STATS = (
         ('PY', 'Python'),
         ('JAVA', 'Java'),
         ('JS', 'Javascript'),
@@ -30,9 +31,6 @@ class AchievementRequirement(models.Model):
         ('HTML', 'HTML'),
         ('CSS', 'CSS'),
         ('RUBY', 'Ruby'),
-    )
-
-    CATEGORIES = (
         ('SEC', 'Security'),
         ('DB', 'Database Administration'),
         ('FE', 'Frontend'),
@@ -42,9 +40,15 @@ class AchievementRequirement(models.Model):
     )
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False, unique=True)
-    category = models.CharField(max_length=255, choices=CODING_LANGUAGES)
-    coding_languages = models.CharField(max_length=255, choices=CATEGORIES)
+    stat = models.CharField(max_length=255, choices=STATS)
     experience_point = models.PositiveIntegerField()
 
     achievement = models.ForeignKey('Achievement', on_delete=models.CASCADE, related_name='achievement_requirements')
+# end class
+
+
+class MemberAchievement(models.Model):
+    achievement = models.ForeignKey('Achievement', on_delete=models.CASCADE, related_name='members_achievements')
+    member = models.ForeignKey('common.Member', on_delete=models.CASCADE, related_name='achievements')
+    timestamp = models.DateTimeField(auto_now_add=True)
 # end class

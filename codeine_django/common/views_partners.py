@@ -1,20 +1,55 @@
 from django.db import transaction
 from django.db.utils import IntegrityError
+from django.utils import timezone
 from django.core.exceptions import ValidationError, ObjectDoesNotExist
 from django.db.models import Q
+from django.template.loader import render_to_string
+from django.core.mail import send_mail
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.decorators import api_view, permission_classes, parser_classes
 from rest_framework.parsers import MultiPartParser, FormParser
-
 from rest_framework.permissions import (
     IsAuthenticated,
     AllowAny,
     IsAuthenticatedOrReadOnly,
+    IsAdminUser
 )
-from .models import BaseUser, Partner, Organization
+
+from .models import BaseUser, Partner, Organization, Member, PaymentTransaction
 from .serializers import NestedBaseUserSerializer
 from .permissions import IsPartnerOnly, IsPartnerOrAdminOrReadOnly
+from consultations.models import ConsultationApplication, ConsultationPayment, ConsultationSlot
+
+import json
+
+
+def cancel_refund_consultations(partner, suspended):
+    if suspended:
+        slots = ConsultationSlot.objects.filter(partner=partner).update(is_cancelled=True)
+
+        applications = ConsultationApplication.objects.filter(consultation_slot__start_time__gte=timezone.now()).filter(consultation_slot__partner=partner)
+        # process refund
+        for application in applications.all():
+            prev_payment = application.consultation_payments.all()[0]
+
+            payment_transaction = PaymentTransaction(
+                payment_amount=prev_payment.payment_transaction.payment_amount,
+                payment_type=prev_payment.payment_transaction.payment_type,
+                payment_status='REFUNDED'
+            )
+            payment_transaction.save()
+
+            consultation_payment = ConsultationPayment(
+                payment_transaction=payment_transaction,
+                consultation_application=application
+            )
+            consultation_payment.save()
+        # end for
+
+        applications.update(is_rejected=True)
+    # end if
+# end def
 
 
 @api_view(['GET', 'POST'])
@@ -46,6 +81,31 @@ def partner_view(request):
                 partner = Partner(user=user, organization=organization, org_admin=org_admin)
                 partner.save()
 
+                name = user.first_name + ' ' + user.last_name
+
+                verification_url = (
+                    f'http://localhost:3000/verify/{user.id}'
+                )
+                recipient_email = (
+                    data['email']
+                )
+
+                plain_text_email = render_to_string(
+                    'verification.txt', {'name': name, 'url': verification_url}
+                )
+
+                html_email = render_to_string(
+                    'verification.html', {'name': name, 'url': verification_url}
+                )
+
+                send_mail(
+                    'Welcome to Codeine!',
+                    plain_text_email,
+                    'Codeine Admin <codeine4103@gmail.com>',
+                    [recipient_email],
+                    html_message=html_email,
+                )
+
                 serializer = NestedBaseUserSerializer(user, context={"request": request})
                 return Response(serializer.data, status=status.HTTP_201_CREATED)
             except (IntegrityError, ValueError, KeyError) as e:
@@ -65,17 +125,16 @@ def partner_view(request):
 
         users = BaseUser.objects.exclude(partner__isnull=True)
 
-        if is_active is not None: 
-            users = users.exclude(is_active=False)
-        # end if
-
+        if is_active is not None:
+            active = json.loads(is_active.lower())
+            users = users.filter(is_active=active)
         if search is not None:
             users = users.filter(
                 Q(first_name__icontains=search) |
                 Q(last_name__icontains=search) |
                 Q(email__icontains=search)
             )
-        # end if
+        # end ifs
 
         serializer = NestedBaseUserSerializer(users.all(), many=True, context={"request": request})
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -112,7 +171,7 @@ def single_partner_view(request, pk):
                 user = BaseUser.objects.get(pk=pk)
                 partner = Partner.objects.get(user=user)
 
-                if (request.user != user and not partner.org_admin) or not user.is_admin:
+                if request.user != user and not partner.org_admin and not request.user.is_admin:
                     return Response(status=status.HTTP_401_UNAUTHORIZED)
                 # end if
 
@@ -133,8 +192,8 @@ def single_partner_view(request, pk):
                     partner.job_title = data['job_title']
                 if 'bio' in data:
                     partner.bio = data['bio']
-                if 'consultation_rate' in data:
-                    partner.consultation_rate = data['consultation_rate']
+                # if 'consultation_rate' in data:
+                #     partner.consultation_rate = data['consultation_rate']
                 if 'org_admin' in data:
                     partner.org_admin = data['org_admin']
                 # end ifs
@@ -157,7 +216,7 @@ def single_partner_view(request, pk):
             user = BaseUser.objects.get(pk=pk)
             partner = Partner.objects.get(user=user)
 
-            if request.user != user and (not partner.org_admin or not request.user.is_admin):
+            if request.user != user and not partner.org_admin and not request.user.is_admin:
                 return Response(status=status.HTTP_401_UNAUTHORIZED)
             # end if
 
@@ -165,7 +224,7 @@ def single_partner_view(request, pk):
             user.save()
 
             return Response(status=status.HTTP_200_OK)
-        
+
         except Member.DoesNotExist:
             return Response(status=status.HTTP_400_BAD_REQUEST)
     # end if
@@ -222,6 +281,37 @@ def activate_partner_view(request, pk):
             return Response(serializer.data, status=status.HTTP_200_OK)
         except ObjectDoesNotExist:
             return Response(status=status.HTTP_404_NOT_FOUND)
+        # end try-except
+    # end if
+# end def
+
+
+@api_view(['PATCH'])
+@permission_classes((IsAdminUser,))
+def suspend_user_view(request, pk):
+    '''
+    Suspend/Unsuspend user
+    '''
+    if request.method == 'PATCH':
+        try:
+            with transaction.atomic():
+                user = BaseUser.objects.get(pk=pk)
+                partner = Partner.objects.get(user=user)
+                data = request.data
+
+                user.is_suspended = data['is_suspended']
+                user.save()
+
+                cancel_refund_consultations(partner, data['is_suspended'])
+
+                serializer = NestedBaseUserSerializer(user, context={"request": request})
+                return Response(serializer.data, status=status.HTTP_200_OK)
+            # end with
+        except ObjectDoesNotExist:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        except (KeyError, ValueError) as e:
+            print(e)
+            return Response(status=status.HTTP_400_BAD_REQUEST)
         # end try-except
     # end if
 # end def

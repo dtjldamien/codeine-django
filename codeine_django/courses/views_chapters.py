@@ -29,7 +29,8 @@ def chapter_view(request, pk):
             # end if
 
             chapters = Chapter.objects.filter(course=course)
-            serializer = ChapterSerializer(chapters, many=True, context={'public': False})
+            serializer = ChapterSerializer(
+                chapters, many=True, context={'public': False})
             return Response(serializer.data, status=status.HTTP_200_OK)
         except (ValueError, KeyError) as e:
             print(e)
@@ -121,7 +122,7 @@ def single_chapter_view(request, pk, chapter_id):
 
             serializer = ChapterSerializer(chapter, context={'public': True})
 
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            return Response(serializer.data, status=status.HTTP_200_OK)
         except ObjectDoesNotExist:
             return Response(status=status.HTTP_404_NOT_FOUND)
         except (ValueError, KeyError) as e:
@@ -162,7 +163,7 @@ def single_chapter_view(request, pk, chapter_id):
 @permission_classes((IsPartnerOnly,))
 def order_chapter_view(request, pk):
     '''
-    Updates order of chapters by array of chapter ids
+    Updates order of chapters by 'array' of chapter ids
     '''
     if request.method == 'PATCH':
         try:
@@ -182,7 +183,8 @@ def order_chapter_view(request, pk):
                 Chapter.objects.filter(pk=chapter_id).update(order=index)
             # end for
 
-            serializer = CourseSerializer(course, context={'request': request, 'public': False})
+            serializer = CourseSerializer(
+                course, context={'request': request, 'public': False})
 
             return Response(serializer.data, status=status.HTTP_200_OK)
         except ObjectDoesNotExist:

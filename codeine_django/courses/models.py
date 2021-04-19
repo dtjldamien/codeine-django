@@ -80,8 +80,21 @@ class Course(models.Model):
     # rating, updated by trigger
     rating = models.DecimalField(max_digits=3, decimal_places=2, default=0)
 
-    # experience points - set by content_provider
-    exp_points = models.PositiveIntegerField(default=0)
+    # experience points
+    exp_points = models.PositiveIntegerField()
+
+    # pro course
+    pro = models.BooleanField(default=False)
+
+    # course duration
+    duration = models.PositiveSmallIntegerField()
+
+    class Meta:
+        ordering = ['is_deleted', 'published_date']
+    # end Meta
+
+    def __str__(self):
+        return f'{self.title}; {self.id}'
 # end class
 
 
@@ -134,10 +147,22 @@ class Video(models.Model):
     video_url = models.URLField()
 # end class
 
+class VideoCodeSnippet(models.Model):
+    video = models.ForeignKey('Video', on_delete=models.CASCADE, related_name='video_code_snippets')
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+    code = models.TextField()
+
+    class Meta:
+        ordering = ['end_time']
+    # end Meta
+# end class
+
 
 class Enrollment(models.Model):
     date_created = models.DateTimeField(auto_now_add=True)
     progress = models.DecimalField(max_digits=5, decimal_places=2)
+    materials_done = models.JSONField(default=list)  # list of chapters done
 
     # ref for course
     course = models.ForeignKey('Course', on_delete=models.SET_NULL, null=True, related_name='enrollments')
@@ -166,9 +191,48 @@ class Quiz(models.Model):
     passing_marks = models.PositiveIntegerField(default=None, null=True, blank=True)
     instructions = models.TextField(default='')
 
+    # question bank
+    is_randomized = models.BooleanField(default=False)
+
     # extends course material or mapped to course
     course_material = models.OneToOneField('CourseMaterial', on_delete=models.CASCADE, null=True, blank=True)
-    course = models.OneToOneField('Course',  on_delete=models.CASCADE, related_name='assessment', null=True, blank=True)
+    course = models.OneToOneField('Course', on_delete=models.CASCADE, related_name='assessment', null=True, blank=True)
+# end class
+
+
+class QuestionBank(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False, unique=True)
+    label = models.CharField(max_length=255)
+
+    course = models.ForeignKey('Course', on_delete=models.CASCADE, related_name="question_banks")
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['course', 'label'], name='Course_QuestionBank Unique Constraint: label')
+        ]
+    # end Meta
+
+    def __str__(self):
+        return f'{self.label}; {self.id}'
+    # end def
+
+# end class
+
+
+class QuestionGroup(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False, unique=True)
+    count = models.PositiveSmallIntegerField(default=1)
+    order = models.PositiveSmallIntegerField(default=0)
+
+    # ref to quiz
+    quiz = models.ForeignKey('Quiz', on_delete=models.CASCADE, related_name='question_groups')
+
+    # ref to question bank
+    question_bank = models.ForeignKey('QuestionBank', null=True, blank=True, on_delete=models.CASCADE, related_name='+')
+
+    class Meta:
+        ordering = ['order']
+    # end Meta
 # end class
 
 
@@ -177,9 +241,10 @@ class Question(models.Model):
     title = models.TextField()
     subtitle = models.TextField(null=True, default='', blank=True)
     order = models.PositiveSmallIntegerField()
+    image = models.ImageField(null=True, blank=True, default=None)
 
-    # ref to Assessment
-    quiz = models.ForeignKey('Quiz', on_delete=models.CASCADE, null=True, blank=True, related_name='questions')
+    # ref to group -- for question banks
+    question_bank = models.ForeignKey('QuestionBank', null=True, blank=True, on_delete=models.CASCADE, related_name='questions')
 
     class Meta:
         ordering = ['order']
@@ -212,8 +277,10 @@ class MRQ(models.Model):
 
 class QuizResult(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False, unique=True)
-    total_marks = models.PositiveIntegerField()
+    date_created = models.DateTimeField(auto_now_add=True)
+    score = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     passed = models.BooleanField(default=False)
+    submitted = models.BooleanField(default=False)
 
     # member who took assessment
     member = models.ForeignKey('common.Member', on_delete=models.CASCADE, related_name='quiz_results')
@@ -225,11 +292,41 @@ class QuizResult(models.Model):
 
 class QuizAnswer(models.Model):
     # parent assessment result
-    quiz_result = models.ForeignKey('Quiz', on_delete=models.CASCADE, related_name='quiz_answers')
+    quiz_result = models.ForeignKey('QuizResult', on_delete=models.CASCADE, related_name='quiz_answers')
 
     # ref to question
     question = models.ForeignKey('Question', on_delete=models.SET_NULL, null=True, related_name='quiz_answers')
 
     response = models.TextField(null=True, blank=True)
     responses = models.JSONField(null=True, blank=True)
+# end class
+
+
+class CourseComment(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False, unique=True)
+    display_id = models.PositiveIntegerField()
+    comment = models.TextField()
+    timestamp = models.DateTimeField(auto_now_add=True)
+    time_edited = models.DateTimeField(default=None, null=True, blank=True)
+    pinned = models.BooleanField(default=False)
+
+    # ref to course through course material
+    course_material = models.ForeignKey('CourseMaterial', on_delete=models.CASCADE, related_name='course_comments')
+
+    # member comment
+    user = models.ForeignKey('common.BaseUser', on_delete=models.SET_NULL, null=True, blank=True, related_name='course_comments')
+
+    # replying to comment
+    reply_to = models.ForeignKey('self', on_delete=models.CASCADE, null=True, blank=True, default=None, related_name='replies')
+
+    class Meta:
+        ordering = ['-pinned']
+    # end Meta
+# end class
+
+
+class CourseCommentEngagement(models.Model):
+    comment = models.ForeignKey('CourseComment', on_delete=models.CASCADE, related_name='engagements')
+    member = models.ForeignKey('common.Member', on_delete=models.CASCADE, related_name='+')
+    timestamp = models.DateTimeField(auto_now_add=True)
 # end class

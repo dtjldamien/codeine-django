@@ -1,6 +1,25 @@
 from django.contrib import admin
 
-from .models import Course, Chapter, CourseMaterial, Video, CourseFile, Quiz, Question, ShortAnswer, MCQ, MRQ, Enrollment
+from .models import (
+    Course,
+    Chapter,
+    CourseMaterial,
+    Video,
+    CourseFile,
+    Quiz,
+    Question,
+    QuestionBank,
+    QuestionGroup,
+    ShortAnswer,
+    MCQ,
+    MRQ,
+    Enrollment,
+    QuizResult,
+    QuizAnswer,
+    CourseReview,
+    CourseComment,
+    CourseCommentEngagement
+)
 
 
 class CourseAdmin(admin.ModelAdmin):
@@ -12,7 +31,6 @@ class CourseAdmin(admin.ModelAdmin):
         'is_deleted',
         'partner',
         'rating',
-        'exp_points',
     )
 # end class
 
@@ -75,7 +93,26 @@ class QuestionAdmin(admin.ModelAdmin):
         'title',
         'subtitle',
         'order',
+        'image',
+        'question_bank',
+    )
+# end class
+
+
+class QuestionBankAdmin(admin.ModelAdmin):
+    list_display = (
+        'id',
+        'label',
+        'course',
+    )
+# end class
+
+
+class QuestionGroupAdmin(admin.ModelAdmin):
+    list_display = (
+        'id',
         'quiz',
+        'question_bank',
     )
 # end class
 
@@ -119,6 +156,61 @@ class EnrollmentAdmin(admin.ModelAdmin):
 # end class
 
 
+class QuizResultAdmin(admin.ModelAdmin):
+    list_display = (
+        'id',
+        'date_created',
+        'score',
+        'passed',
+        'submitted',
+        'member',
+        'quiz',
+    )
+# end class
+
+
+class QuizAnswerAdmin(admin.ModelAdmin):
+    list_display = (
+        'quiz_result',
+        'question',
+        'response',
+        'responses',
+    )
+# end class
+
+
+class CourseReviewAdmin(admin.ModelAdmin):
+    list_display = (
+        'rating',
+        'description',
+        'timestamp',
+        'course',
+        'member'
+    )
+# end class
+
+
+class CourseCommentAdmin(admin.ModelAdmin):
+    list_display = (
+        'id',
+        'comment',
+        'timestamp',
+        'pinned',
+        'course_material',
+        'user',
+        'reply_to',
+    )
+# end class
+
+
+class CourseCommentEngagementAdmin(admin.ModelAdmin):
+    list_display = (
+        'comment',
+        'member',
+    )
+# end class
+
+
 admin.site.register(Course, CourseAdmin)
 admin.site.register(Chapter, ChapterAdmin)
 admin.site.register(CourseMaterial, CourseMaterialAdmin)
@@ -126,7 +218,14 @@ admin.site.register(CourseFile, CourseFileAdmin)
 admin.site.register(Video, VideoAdmin)
 admin.site.register(Quiz, QuizAdmin)
 admin.site.register(Question, QuestionAdmin)
+admin.site.register(QuestionBank, QuestionBankAdmin)
+admin.site.register(QuestionGroup, QuestionGroupAdmin)
 admin.site.register(ShortAnswer, ShortAnswerAdmin)
 admin.site.register(MCQ, MCQAdmin)
 admin.site.register(MRQ, MRQAdmin)
 admin.site.register(Enrollment, EnrollmentAdmin)
+admin.site.register(QuizResult, QuizResultAdmin)
+admin.site.register(QuizAnswer, QuizAnswerAdmin)
+admin.site.register(CourseReview, CourseReviewAdmin)
+admin.site.register(CourseComment, CourseCommentAdmin)
+admin.site.register(CourseCommentEngagement, CourseCommentEngagementAdmin)
